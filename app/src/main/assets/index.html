@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hitbox Touch Controller</title>
+<style>
+:root{color-scheme:dark;--bg:#000;--pur:#8530cf;--pur2:#a255e8;--teal:#13a6b3;--fg:#e9e9ef;--mut:#8a8a98}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,sans-serif;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none}
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+#wrap{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
+#pad{position:relative;aspect-ratio:2048/1185;width:min(100vw,calc(100vh*2048/1185));max-height:100%}
+.b{position:absolute;box-sizing:border-box;display:flex;align-items:center;justify-content:center;font-weight:700;touch-action:none}
+.p{background:var(--pur);border-radius:50%;font-size:clamp(14px,3.2vw,34px);transform:translate(-50%,-50%)}
+.p.on{background:var(--pur2);box-shadow:0 0 0 .5vw #fff3 inset;filter:brightness(1.3)}
+.p.oval{border-radius:999px}
+.t{background:var(--teal);border-radius:999px;color:#000;font-size:clamp(12px,2.6vw,28px);transform:translate(-50%,-50%)}
+.t.on{filter:brightness(1.4)}
+body.edit .p{outline:3px dashed #fff8}
+#bar{position:fixed;right:8px;top:calc(env(safe-area-inset-top,0px) + 8px);display:flex;gap:6px;z-index:5}
+button.ui{background:#222;color:var(--fg);border:1px solid #444;border-radius:8px;padding:8px 12px;font-size:14px}
+#menu{position:fixed;inset:0;background:#000c;display:none;align-items:center;justify-content:center;z-index:9}
+#menu .box{background:#16161c;border-radius:14px;padding:16px;max-width:340px;display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+#menu .box h3{grid-column:1/-1;margin:0 0 4px;font-size:15px;color:var(--mut)}
+#menu button{background:var(--pur);color:#fff;border:0;border-radius:8px;padding:12px 0;font-size:16px;font-weight:700}
+#hud{position:fixed;left:10px;bottom:calc(env(safe-area-inset-bottom,0px) + 6px);font:12px monospace;color:var(--mut)}
+</style></head><body>
+<div id="wrap"><div id="pad"></div></div>
+<div id="bar"><button class="ui" id="edit">Edit buttons</button><button class="ui" id="fs">Fullscreen</button></div>
+<div id="menu"><div class="box"><h3 id="mt">Assign button</h3></div></div>
+<div id="hud"></div>
+<script>
+const OPTS=["Left","Right","Up","Down","A","B","X","Y","L","R","ZL","ZR"];
+const SHORT={Left:"◀",Right:"▶",Up:"▲",Down:"▼"};
+const BTN=[
+[205,330,230,230,"Left"],[453,340,210,220,"Down"],[704,462,224,222,"Right"],[785,895,310,300,"Up"],
+[1099,445,256,236,"Y"],[1343,345,230,250,"X"],[1620,362,244,248,"R"],[1875,300,150,300,"ZR",-35],
+[1170,702,256,240,"B"],[1437,610,210,236,"A"],[1685,615,244,248,"L"],[1908,655,150,320,"ZL",30]];
+const PILLS=[[347,70,226,95,"Start","start"],[627,85,212,95,"Select","select"],[909,86,244,95,"Home","home"]];
+let map=BTN.map(b=>b[4]);
+try{const s=JSON.parse(localStorage.getItem("hbmap")||"null");if(Array.isArray(s)&&s.length==12)map=s}catch(e){}
+const pad=document.getElementById("pad"),W=2048,H=1185,down=new Set(),els=[];
+function place(el,x,y,w,h){el.style.left=x/W*100+"%";el.style.top=y/H*100+"%";el.style.width=w/W*100+"%";el.style.height=h/H*100+"%"}
+BTN.forEach((b,i)=>{const e=document.createElement("div");e.className="b p"+(b[5]?" oval":"");place(e,b[0],b[1],b[2],b[3]);
+ if(b[5])e.style.transform=`translate(-50%,-50%) rotate(${b[5]}deg)`;e.dataset.i=i;pad.appendChild(e);els.push(e)});
+const pills=PILLS.map(p=>{const e=document.createElement("div");e.className="b t";place(e,p[0],p[1],p[2],p[3]);e.textContent=p[4];e.dataset.k=p[5];pad.appendChild(e);return e});
+function label(){els.forEach((e,i)=>{const m=map[i];e.textContent=SHORT[m]||m;e.parentNode&&0})}
+label();
+const owner=new Map();
+function state(){const s={};OPTS.forEach(o=>s[o]=0);["start","select","home"].forEach(k=>s[k]=0);
+ down.forEach(k=>{if(k in s)s[k]=1});
+ if(s.Left&&s.Right){s.Left=s.Right=0}if(s.Up&&s.Down){s.Up=s.Down=0}return s}
+function key(el){return el.dataset.k||map[+el.dataset.i]}
+function push(){const s=state();document.getElementById("hud").textContent=Object.keys(s).filter(k=>s[k]).join(" + ")||"idle";
+ try{window.dispatchEvent(new CustomEvent("controllerstate",{detail:s}));
+ if(window.Android&&Android.sendState)Android.sendState(JSON.stringify(s))}catch(e){}}
+function recompute(){down.clear();els.concat(pills).forEach(e=>{if(e._n>0)down.add(key(e))});
+ els.concat(pills).forEach(e=>e.classList.toggle("on",e._n>0));push()}
+function hit(x,y){const a=document.elementsFromPoint(x,y).find(e=>e.classList&&e.classList.contains("b"));return a}
+let editing=false,target=null;
+document.addEventListener("pointerdown",e=>{if(e.target.closest("#bar,#menu"))return;const el=hit(e.clientX,e.clientY);if(!el)return;
+ if(editing){if(el.dataset.i!==undefined){target=+el.dataset.i;document.getElementById("mt").textContent="Assign button "+(target+1);menu.style.display="flex"}return}
+ e.preventDefault();owner.set(e.pointerId,el);el._n=(el._n||0)+1;try{navigator.vibrate&&navigator.vibrate(8)}catch(_){}recompute()});
+document.addEventListener("pointermove",e=>{if(editing||!owner.has(e.pointerId))return;const el=hit(e.clientX,e.clientY),old=owner.get(e.pointerId);
+ if(el!==old){old._n--;if(el){el._n=(el._n||0)+1;owner.set(e.pointerId,el)}else owner.delete(e.pointerId);recompute()}});
+function up(e){const o=owner.get(e.pointerId);if(o){o._n--;owner.delete(e.pointerId);recompute()}}
+document.addEventListener("pointerup",up);document.addEventListener("pointercancel",up);
+document.addEventListener("contextmenu",e=>e.preventDefault());
+const menu=document.getElementById("menu"),box=menu.firstElementChild;
+OPTS.forEach(o=>{const b=document.createElement("button");b.textContent=SHORT[o]||o;b.onclick=()=>{map[target]=o;
+ try{localStorage.setItem("hbmap",JSON.stringify(map))}catch(_){}label();menu.style.display="none"};box.appendChild(b)});
+menu.onclick=e=>{if(e.target===menu)menu.style.display="none"};
+document.getElementById("edit").onclick=function(){editing=!editing;document.body.classList.toggle("edit",editing);this.textContent=editing?"Done":"Edit buttons"};
+document.getElementById("fs").onclick=()=>{try{document.documentElement.requestFullscreen()}catch(_){}};
+</script></body></html>
