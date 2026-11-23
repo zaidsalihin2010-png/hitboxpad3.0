@@ -10,14 +10,6 @@ import org.json.JSONObject
 import java.util.Arrays
 import java.util.concurrent.Executors
 
-/**
- * Emulates a Nintendo Switch Pro Controller over Android's Bluetooth HID Device profile.
- *
- * Protocol details (HID descriptor, report IDs, subcommand numbers, and button bit values)
- * are ported from the open-source JoyConDroid project (TeamJCD/JoyConDroid, GPL),
- * specifically device/SwitchController.java, nx/constant/NxConstants.java and
- * service/BluetoothControllerService.java - not guessed/hand-rolled.
- */
 @SuppressLint("MissingPermission")
 class ProController(private val ctx: Context) {
     var onStatus: (String) -> Unit = {}
@@ -31,7 +23,6 @@ class ProController(private val ctx: Context) {
     @Volatile private var fullMode = false
     @Volatile private var streaming = false
 
-    // ---- Real Pro Controller HID descriptor (from SwitchController.DESCRIPTOR) ----
     private val DESC = hexToBytes(
         "05010905a1010601ff852109217508953081028530093075089530810285310931750896690181028532" +
         "0932750896690181028533093375089669018102853f0509190129101500250175019510810205010939" +
@@ -45,13 +36,12 @@ class ProController(private val ctx: Context) {
     private val HID_PROVIDER = "Nintendo"
     private val BT_DEVICE_NAME = "Pro Controller"
 
-    // ---- Report / command IDs (NxConstants) ----
-    private val BUTTON_REPORT: Byte = 0x3F          // simple HID mode, sent by us
-    private val SUBCOMMAND_REPLY_REPORT: Byte = 0x21 // sent by us
-    private val FULL_BUTTON_REPORT: Byte = 0x30      // sent by us
-    private val REQUEST_RUMBLE_AND_SUBCOMMAND: Byte = 0x01 // received
-    private val REQUEST_RUMBLE_ONLY: Byte = 0x10           // received
-    private val REQUEST_NFC_IR_MCU: Byte = 0x11            // received
+    private val BUTTON_REPORT: Byte = 0x3F
+    private val SUBCOMMAND_REPLY_REPORT: Byte = 0x21
+    private val FULL_BUTTON_REPORT: Byte = 0x30
+    private val REQUEST_RUMBLE_AND_SUBCOMMAND: Byte = 0x01
+    private val REQUEST_RUMBLE_ONLY: Byte = 0x10
+    private val REQUEST_NFC_IR_MCU: Byte = 0x11
 
     private val REQUEST_DEVICE_INFO: Byte = 0x02
     private val REQUEST_SET_SHIPMENT: Byte = 0x08
@@ -63,7 +53,6 @@ class ProController(private val ctx: Context) {
     private val SIMPLE_HID_MODE: Byte = 0x3F
     private val STANDARD_FULL_MODE: Byte = 0x30
 
-    // ---- Button bit values (NxConstants, exact) ----
     private val DOWN_BIT = 0x01; private val RIGHT_BIT = 0x02
     private val LEFT_BIT = 0x04; private val UP_BIT = 0x08
     private val SL_BIT = 0x10; private val SR_BIT = 0x20
@@ -82,7 +71,6 @@ class ProController(private val ctx: Context) {
     private val FULL_Y_BIT = 0x01; private val FULL_X_BIT = 0x02
     private val FULL_B_BIT = 0x04; private val FULL_A_BIT = 0x08
 
-    // Current button state (Pro Controller combines left+right)
     @Volatile private var bDown=0; @Volatile private var bUp=0
     @Volatile private var bLeft=0; @Volatile private var bRight=0
     @Volatile private var bY=0; @Volatile private var bX=0
@@ -95,10 +83,9 @@ class ProController(private val ctx: Context) {
 
     private var timeByte: Byte = 0
 
-    // Fake-but-plausible SPI flash (stick calibration + colors + controller type byte)
     private val spi = ByteArray(0x10100) { 0xFF.toByte() }.also { s ->
-        s[0x6012] = 0x03 // 3 = Pro Controller
-        s[0x601B] = 0x01 // use colors below
+        s[0x6012] = 0x03
+        s[0x601B] = 0x01
         val cal = intArrayOf(0x00, 0x07, 0x70, 0x00, 0x08, 0x80, 0x00, 0x07, 0x70)
         for (base in intArrayOf(0x603D, 0x6046, 0x6020, 0x8010)) {
             cal.forEachIndexed { i, v -> if (base + i < s.size) s[base + i] = v.toByte() }
@@ -119,15 +106,11 @@ class ProController(private val ctx: Context) {
 
     private fun registerApp() {
         val sdp = BluetoothHidDeviceAppSdpSettings(HID_NAME, HID_DESCRIPTION, HID_PROVIDER, SUBCLASS, DESC)
-        // Real QoS values from BluetoothControllerService (QOS_TOKEN_RATE etc). Missing/null
-        // QoS is a likely cause of "connects then immediately disconnects".
         val qos = BluetoothHidDeviceAppQosSettings(
             BluetoothHidDeviceAppQosSettings.SERVICE_GUARANTEED,
             21720, 362, 21720, 16667, 16667
         )
         try {
-            // Set the adapter's own BT name to "Pro Controller" so the Switch's pairing
-            // screen shows it the same way a real controller would.
             adapter?.name = BT_DEVICE_NAME
             hid?.registerApp(sdp, qos, qos, Executors.newSingleThreadExecutor(), cb)
         } catch (e: SecurityException) {
@@ -135,19 +118,15 @@ class ProController(private val ctx: Context) {
         }
     }
 
-    /** Call once the user picks the Switch. Mirrors BluetoothControllerService.connect(). */
     fun connect(d: BluetoothDevice) {
-        if (d.bondState == BluetoothDevice.BOND_BONDED) {
-            onStatus("Connecting to ${d.name}…")
-            // Delay to avoid racing the Switch's own inbound HID connect attempt
-            // (same 2s delay BluetoothControllerService uses).
-            h.postDelayed({
-                try { hid?.connect(d) } catch (e: SecurityException) { onStatus("Missing Bluetooth permission") }
-            }, 2000)
-        } else {
-            onStatus("Pairing with ${d.name}…")
-            d.createBond()
+        if (d.bondState != BluetoothDevice.BOND_BONDED) {
+            onStatus("Not paired yet - use 'Make phone discoverable' and let the Switch connect")
+            return
         }
+        onStatus("Connecting to ${d.name}…")
+        h.postDelayed({
+            try { hid?.connect(d) } catch (e: SecurityException) { onStatus("Missing Bluetooth permission") }
+        }, 2000)
     }
 
     fun setState(j: JSONObject) {
@@ -176,7 +155,7 @@ class ProController(private val ctx: Context) {
         if (bPlus == 1) b1 = b1 or PLUS_BIT
         if (bHome == 1) b1 = b1 or HOME_BIT
         buf[1] = b1.toByte()
-        buf[2] = 8 // stick neutral (hat value 8 = centered)
+        buf[2] = 8
         for (i in 3..10) buf[i] = if (i % 2 == 0) 0x80.toByte() else 0x00
         sendReport(BUTTON_REPORT, buf)
     }
@@ -222,9 +201,9 @@ class ProController(private val ctx: Context) {
     private fun sendFullReport() {
         val out = ByteArray(48)
         out[0] = timeByte++
-        out[1] = 0x91.toByte() // battery full + plugged
+        out[1] = 0x91.toByte()
         fillFullButtonReport(out, 2)
-        out[11] = 0x0C // neutral rumble/vibrator byte
+        out[11] = 0x0C
         sendReport(FULL_BUTTON_REPORT, out)
     }
 
