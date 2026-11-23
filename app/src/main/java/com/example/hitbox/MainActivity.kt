@@ -44,6 +44,7 @@ class MainActivity : Activity() {
         root.addView(wv); root.addView(bar, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START))
         setContentView(root)
         pc.onStatus = { s -> runOnUiThread { status.text = s } }
+        PairingReceiver.register(this)
         if (Build.VERSION.SDK_INT >= 31 && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != 0)
             requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_ADVERTISE), 1)
         else pc.init()
