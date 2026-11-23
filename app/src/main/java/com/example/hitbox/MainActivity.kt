@@ -56,7 +56,8 @@ class MainActivity : Activity() {
     private fun menu() {
         val ad = getSystemService(BluetoothManager::class.java).adapter
         val devs: List<BluetoothDevice> = ad.bondedDevices.toList()
-        val items = devs.map { it.name ?: it.address } + listOf("➕ Pair new device (Bluetooth settings)", "👁 Make phone discoverable")
+        val items = devs.map { (it.name ?: it.address) + if (it.bondState == BluetoothDevice.BOND_BONDED) " (paired)" else "" } +
+                listOf("➕ Pair new device (Bluetooth settings)", "👁 Make phone discoverable")
         AlertDialog.Builder(this).setTitle("Connect to Switch").setItems(items.toTypedArray()) { _, i ->
             when {
                 i < devs.size -> pc.connect(devs[i])
